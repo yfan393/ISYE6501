@@ -1,0 +1,187 @@
+---
+title: "ISYE6501HW4"
+author: "Yuanting Fan(904047984) Wenjia Hu(904057780) Sen Yang(904025995)"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    df_print: paged
+fontsize: 12pt
+---
+
+## Question 5.1
+
+We implement boxplot to visualize features of 16 columns. For the last column (number of crimes per 100,000 people), the boxplot suggests that there are two possible outliers.
+```{r}
+dataCrime <- data.frame(read.table("C:/Users/yuanting/Desktop/6501 hw4/data 5.1/uscrime.txt",header = TRUE))
+boxplot(dataCrime)
+```
+To check it in statistical methods, we run grubbs.test in R and the p-value equals 0.1577, not significant enough to reject the null hypothesis. Therefore, we can't say that highest value 1993 is an outlier even at 90% confidence interval.
+```{r}
+# install.packages("outliers", repos = "https://cran.r-project.org")
+library(outliers)
+grubbs.test(dataCrime[,16],two.sided = FALSE)
+```
+Furthermore, we took a closer look at the data points of the last column.The density plot depicts taht distribution of crime data is not normally distributed: it is skewed toward the right.
+
+```{r}
+plot(density(dataCrime$Crime), main="Density Plot: Crime")
+polygon(density(dataCrime$Crime), col="red")
+```
+Also the z-score is not greater than 3. Statistically speaking, we conclude that there's no significant outlier in the crime data.
+
+```{r}
+# Calculate z-scores
+z_scores <- scale(dataCrime$Crime)
+plot(z_scores, type = "o", col = "blue", xlab = "Index", ylab = "Z-scores", 
+     main = "Z-scores Plot",ylim = c(min(z_scores), 4))
+abline(h = 3, col = "green", lty = 2)
+text(1:length(z_scores), z_scores, labels = round(z_scores, 1), pos = 3, col = "blue")
+
+```
+## Question 8.1
+
+Situation: Predicting Employee Work Performance
+
+We aim to develop a model to predict employee performance scores based on several measurable factors. This model will assist employers in making data-driven decisions regarding training, resource allocation, and employee development. Since the goal is to predict employee performance, a continuous variable that can be measured by metrics like sales revenue and KPI achievement rate, and the relationships between performance and the factors below are likely to be approximately linear or follow a predictable pattern, linear regression analysis would be appropriate.
+
+Predictors
+
+- **Workload**: The amount of work or number of tasks assigned to an employee. We usually measure workload by the number of tasks during a specific period. A higher workload might negatively influence performance due to stress or fatigue.
+
+- **IQ (Intelligence Quotient)**: A measure of cognitive ability, generally assessed using a questionnaire called the Binet Scale. Employees with higher IQs might perform better due to enhanced problem-solving and analytical skills.
+
+- **Work Self-Efficacy**: A measure of how efficiently an employee completes tasks. We often use self-statement questionnaires, such as the Work Self-Efficacy Scale (WSES), to quantify work self-efficacy. Higher self-efficacy can lead to better overall performance.
+
+- **Job Burnout**:The level of stress or exhaustion an employee experiences. The Maslach Burnout Inventory (MBI) is the most widely used tool for measuring job burnout. High levels of burnout can negatively impact performance.
+
+- **Positive Feedback**: The frequency and quality of positive feedback received by the employee. We can track the number of positive feedback instances received over a period, including evaluations from colleagues, supervisors, or clients. More positive feedback can boost motivation and improve performance.
+
+## Question 8.2
+
+As shown above, the distribution of crime data is not normal.To run linear regression model, Log transformation is a common method to normalized the dependent variable. We can see that the Log(Crime) distribution has better normality than the original dependent variable (Crime)
+
+```{r}
+plot(density(log(dataCrime$Crime)), main="Density Plot: Log Crime")
+polygon(density(log(dataCrime$Crime)), col="red")
+```
+To visualize the potential relationship between each predictor and the response, we plotted scatter plots of the predictor variables against the log transformed response variable.No significant conclusion can be made at this stage.
+
+```{r}
+predictors <- dataCrime[, 1:15]
+par(mfrow = c(4, 4), mar = c(1, 1, 1, 1))
+for (predictor in names(predictors)) {
+  plot(dataCrime[[predictor]], log(dataCrime$Crime),xaxt = 'n',
+       main = paste(predictor, "vs. LogCrime"))
+}
+```
+After the log transformation, we build our regression model with all predictors included.
+```{r}
+model_lm_1 <- lm(log(Crime) ~.,data =dataCrime)
+summary(model_lm_1)
+```
+The result of the linear regression model shows that predictors M (percentage of males aged 14–24 in total state population), Ed(mean years of schooling of the population aged 25 years or over), U2(unemployment rate of urban males 35–39), Ineq(	income inequality), and Prob(probability of imprisonment) are statistically significant and are possible to have a meaningful impact on the response.The Multiple R-squared equals 0.7897.
+
+However, further analysis reveals potential multicollinearity among the variables
+```{r}
+cor(dataCrime, method = "pearson")
+```
+
+The correlation analysis returns high correlation between some of the variables which can lead to multicollinearity, making it difficult to determine the contribution of each variable. For instance, there is a correlation as high as 0.99 between Po1 and Po2. The variable wealth also has a relatively high correlation with some other variables. These results prompt us to perform subset selection on the variables to identify the best possible predictor combinations.
+
+Here, we use some of the codes from the crime data source website to help select subsets.We use leap() function with nbest=2 to get the best two one-variable models,best two 2-variable models, all the way up to best two 15-variable models.
+
+```{r}
+library(leaps)
+leaps.crime <- leaps(dataCrime[, 1:15], dataCrime$Crime, nbest = 2)
+leaps.tab <- data.frame(p = leaps.crime$size, Cp = leaps.crime$Cp)
+```
+
+For the Mallows' Cp values from the leaps(), we aim for a small Cp value.while still close to P so that the model can strike a good balance between model fitting and complexity. According to the result, p=7 Cp=3.8596, p=8 Cp =4.4889, and p = 9, Cp = 4.2449 could be good choices.
+```{r}
+print(leaps.tab)
+```
+
+It shows which predictors are chosen for p=7 Cp=3.8596, p=8 Cp =4.4889, and p = 9, Cp = 4.2449
+```{r}
+leaps.crime$which
+```
+
+Then we use the selected independent variables to build new models. The result shows that the model with 7 predictors performs better as all 7 predictors are statistically significant or slightly higher than the 0.05 threshold.
+```{r}
+model_lm_2 <- lm(log(Crime) ~ M+Ed+Po1+U2+Wealth+Ineq+Prob,data =dataCrime)
+model_lm_3 <- lm(log(Crime) ~ M+Ed+Po1+M.F+U1+U2+Ineq+Prob,data =dataCrime)
+model_lm_4 <- lm(log(Crime) ~ M+Ed+Po1+M.F+U1+U2+Wealth+Ineq+Prob,data =dataCrime)
+summary(model_lm_2)
+summary(model_lm_3)
+summary(model_lm_4)
+```
+ We can also use AIC to check the fit of these models.Since the dataset is quite small, the corrected AIC would be a better choice to avoid overfitting.
+```{r}
+library(AICcmodavg)
+aic_c_value_1 <- AICc(model_lm_1)
+aic_c_value_2 <- AICc(model_lm_2)
+aic_c_value_3 <- AICc(model_lm_3)
+aic_c_value_4 <- AICc(model_lm_4)
+print(aic_c_value_1)
+print(aic_c_value_2)
+print(aic_c_value_3)
+print(aic_c_value_4)
+```
+
+For AIC values, we prefer the models with a smaller AIC value. Compared with the original model with all the 15 predictors, the new models all show better performance in terms of AIC, indicating a better balance between model fitting and complexity.As the AIC for the model_lm_2 is the smallest, it seems to be a good choice. 
+
+For model_lm_2, the p-values for U2, Wealth, and Prob are 0.065, 0.077, 0.057, showing that they are marginally insignificant.A closer look would find that the predictor wealth shows a high correlation of -0.88 with Ineq, which may explain why its p value is not highly significant. Also, the coefficient for wealth is only 0.0001855, close to zero and indicating a small effect from this predictor on the final outcome. 
+
+For U2 and Prob, they do not show a high correlation with the other chosen predictors.Moreover, their estimated coefficients are 0.0856809 and -3.3773533, indicating they would have meaningful impact on the final model.
+
+In practice, we believe that U2(unemployment rate of urban males 35–39) and Prob(ratio of number of commitments to number of offenses) would be likely to influence the crime rate in a region. Therefore we decide to remove wealth from our model while keeping U2 and Prob.
+```{r}
+model_lm_5 <- lm(log(Crime) ~ M+Ed+Po1+U2+Ineq+Prob,data =dataCrime)
+summary(model_lm_5)
+```
+
+The AIC for the new model is slightly higher than the model_lm_2, but still a relatively small value compared with the other model choices,indicating that this is a model performing a good balance between model complexity(less predictors) and fitting.
+```{r}
+aic_c_value_5 <- AICc(model_lm_5)
+print(aic_c_value_5)
+```
+
+In conclusion, our final regression model is log(Crime) = 0.11927*M+0.20987*Ed
++0.11902*Po1+0.09523*U2+0.07206*Ineq-4.10406*Prob
+
+For the new data,
+M = 14.0
+So = 0
+Ed = 10.0
+Po1 = 12.0
+Po2 = 15.5
+LF = 0.640
+M.F = 94.0
+Pop = 150
+NW = 1.1
+U1 = 0.120
+U2 = 3.6
+Wealth = 3200
+Ineq = 20.1
+Prob = 0.04
+Time = 39.0
+
+Based on the new data, the prediction for the observed crime rate in the city is 919.4647. 
+```{r}
+log_Crime <- 0.11927*14.0+0.20987*10.0+0.11902*12.0+0.09523*3.6+0.07206*20.1-4.10406*0.04
+Crime_newdata <- exp(log_Crime)
+print(Crime_newdata)
+```
+
+One last matter we'd like to point out is we double check whether the highest value in crime data affect the regression model or whether is it wrong to keep it in regression process. Via Cooks'distance stats, the answer is NO: the highest value does not affect the regression model thus it's proper to keep it in regression.
+
+```{r}
+cooks_d <- cooks.distance(model_lm_5)
+# Print Cook's distance
+influential_points <- which(cooks_d > 1)
+influential_data <- dataCrime[influential_points, ]
+# Print the filtered data frame
+print(influential_data)
+```
+
